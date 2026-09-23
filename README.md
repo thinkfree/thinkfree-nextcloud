@@ -108,6 +108,10 @@ Once saved, the **“Open in Thinkfree Office”** action will automatically app
 - Product information:  
   [Thinkfree Office Website](https://www.thinkfree.com)
 
+## Maintainer
+
+Goochul Im ([@goochulim-thinkfree-com](https://github.com/goochulim-thinkfree-com)) — goochul.im@thinkfree.com, Thinkfree Inc.
+
 ---
 
 Thinkfree Inc. All rights reserved.
