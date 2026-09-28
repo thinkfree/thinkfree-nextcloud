@@ -2,6 +2,7 @@
 /.vscode/
 /*.iml
 
+# composer 가 만드는 것. 릴리즈 워크플로우가 --no-dev 로 새로 설치한다.
 /vendor/
 /vendor-bin/
 
@@ -10,4 +11,10 @@
 
 /node_modules/
 /package-lock.json
-/js/
+
+# 패키징 때 occ 가 만드는 서명. 저장소에 두면 옛 해시 목록이 남는다.
+/appinfo/signature.json
+
+# 릴리즈 워크플로우가 만드는 작업 디렉터리
+/staging/
+/dist/

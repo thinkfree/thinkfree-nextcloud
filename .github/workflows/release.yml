@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 버전 읽기
+        run: |
+          VERSION=$(grep -oP '(?<=<version>)[^<]+' appinfo/info.xml)
+          test -n "$VERSION" || { echo "appinfo/info.xml 에서 버전을 읽지 못했다"; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "버전 $VERSION"
+
+      - name: 키·인증서 복원
+        env:
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+          APP_PUBLIC_KEY: ${{ secrets.APP_PUBLIC_KEY }}
+        run: |
+          mkdir -p "$HOME/certs"
+          echo "$APP_PRIVATE_KEY" > "$HOME/certs/thinkfree.key"
+          echo "$APP_PUBLIC_KEY" > "$HOME/certs/thinkfree.crt"
+          chmod 600 "$HOME/certs/thinkfree.key"
+
+      - name: 키 쌍 확인
+        run: |
+          a=$(openssl x509 -noout -modulus -in "$HOME/certs/thinkfree.crt" | openssl md5)
+          b=$(openssl rsa -noout -modulus -in "$HOME/certs/thinkfree.key" | openssl md5)
+          test "$a" = "$b" || { echo "키와 인증서가 짝이 아니다"; exit 1; }
+          openssl x509 -noout -subject -in "$HOME/certs/thinkfree.crt"
+
+      - name: 스테이징 구성
+        run: |
+          # 배포판 tarball에 필요하지 않은 파일들을 모두 제외하고 tarball을 만든다.
+          mkdir -p staging/thinkfree
+          tar -c --exclude=./.git --exclude=./.github --exclude=./staging --exclude=./dist --exclude=./screenshots --exclude=./appinfo/signature.json --exclude=*.map . | tar -x -C staging/thinkfree
+
+      - name: 배포용 vendor 설치
+        run: |
+          # composer.lock 을 그대로 따라 설치한다. --no-dev 로 개발 의존성을 뺀다.
+          docker run --rm -v "$PWD/staging/thinkfree":/app -w /app composer:2 install --no-dev --no-scripts --optimize-autoloader --no-progress
+
+      - name: 코드 서명
+        run: |
+          # occ 는 설치되지 않은 인스턴스에서도 integrity:sign-app 을 수행한다.
+          # 공식 이미지에서 occ 는 /usr/src/nextcloud 에 있다.
+          docker run --rm -v "$PWD/staging/thinkfree":/app -v "$HOME/certs":/certs:ro -w /usr/src/nextcloud nextcloud:31-fpm-alpine php occ integrity:sign-app --privateKey=/certs/thinkfree.key --certificate=/certs/thinkfree.crt --path=/app
+          sudo chown -R "$(id -u):$(id -g)" staging
+          test -f staging/thinkfree/appinfo/signature.json
+
+      - name: tarball 생성
+        run: |
+          mkdir -p dist
+          tar -czf "dist/thinkfree-$VERSION.tar.gz" -C staging thinkfree
+          ls -lh dist
+
+      - name: 릴리즈 서명 생성
+        run: |
+          openssl dgst -sha512 -sign "$HOME/certs/thinkfree.key" "dist/thinkfree-$VERSION.tar.gz" | openssl base64 -A > "dist/thinkfree-$VERSION.sig"
+
+      - name: 패키지 내용 확인
+        run: |
+          echo "파일 수 $(tar -tzf "dist/thinkfree-$VERSION.tar.gz" | wc -l)"
+          if tar -tzf "dist/thinkfree-$VERSION.tar.gz" | grep -E 'node_modules|/src/|[.]key$|[.]map$'; then
+            echo "배포하면 안 되는 파일이 들어 있다"
+            exit 1
+          fi
+          echo "제외 확인 완료"
+
+      - name: 릴리즈 초안 생성
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
+          draft: true
+          generate_release_notes: true
+          files: |
+            dist/thinkfree-*.tar.gz
+            dist/thinkfree-*.sig
