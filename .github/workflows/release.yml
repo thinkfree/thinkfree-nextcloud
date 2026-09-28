@@ -70,9 +70,12 @@ jobs:
 
       - name: 패키지 내용 확인
         run: |
-          echo "파일 수 $(tar -tzf "dist/thinkfree-$VERSION.tar.gz" | wc -l)"
-          if tar -tzf "dist/thinkfree-$VERSION.tar.gz" | grep -E 'node_modules|/src/|[.]key$|[.]map$'; then
+          LIST=$(tar -tzf "dist/thinkfree-$VERSION.tar.gz")
+          echo "파일 수 $(echo "$LIST" | wc -l)"
+          BAD=$(echo "$LIST" | grep -E "^thinkfree/(src|node_modules)/|[.]map$|[.]key$" || true)
+          if [ -n "$BAD" ]; then
             echo "배포하면 안 되는 파일이 들어 있다"
+            echo "$BAD"
             exit 1
           fi
           echo "제외 확인 완료"
