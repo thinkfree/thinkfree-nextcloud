@@ -6,8 +6,12 @@ The **Thinkfree Office for Nextcloud** app enables users to open, view, and edit
 
 ## Overview
 
-This integration allows seamless editing and collaboration on documents, spreadsheets, and presentations within Nextcloud through Thinkfree Office.  
+This app allows seamless editing and collaboration on documents, spreadsheets, and presentations within Nextcloud through Thinkfree Office.  
 All files remain securely stored in your Nextcloud environment.
+
+The connector implements the standard **WOPI** protocol. It makes Nextcloud act as
+a WOPI host, so no adapter, plugin, or shared secret has to be installed or
+configured on either side — only the address of your Thinkfree Office server.
 
 ---
 
@@ -17,36 +21,23 @@ All files remain securely stored in your Nextcloud environment.
 - Real-time co-editing with comments and change tracking
 - Full compatibility with Microsoft Office and OpenDocument formats
 
-**Supported file formats**
-
-| Type | Formats |
-|------|----------|
-| Editable | `.doc`, `.docx`, `.rtf`, `.xls`, `.xlsx`, `.ppt`, `.pptx` |
-| View only | `.txt`, `.csv` |
-| Coming soon | `.odt`, `.ods`, `.odp` |
-
 ---
 
-## Prerequisites
+## Requirements
 
-Before setting up the integration, you need access to a **Thinkfree Office Server** that is reachable from both:
-- The **Nextcloud server**, and
-- **User browsers** (clients)
+- **Nextcloud 31 – 35**
+- **Thinkfree Office Server v17 or later**
 
 You can:
 - [Request a free trial package and license](https://thinkfree.com/thinkfree-office/pricing/free-license/), or
 - Deploy Thinkfree Office on your own server or private cloud.
 
-After deploying your Thinkfree Office server, install the **Nextcloud Adapter** to enable communication between Thinkfree Office and Nextcloud.
-
-**Download Nextcloud Adapter:**  
-[Download](https://drive.google.com/file/d/1hY9l6jZE6rkFyriwRp7h0pU-1yWUxGW_/view?usp=sharing)
-
 ---
 
 ## Installation
 
-### 1. Install the Thinkfree Office App in Nextcloud
+### Install the Thinkfree Office App in Nextcloud
+
 1. Log in to Nextcloud as an **administrator**.
 2. Go to **Profile Menu → Apps**.
 3. Find **Thinkfree Office** in the list of available applications.
@@ -56,29 +47,26 @@ After deploying your Thinkfree Office server, install the **Nextcloud Adapter** 
 
 ## Configuration
 
-Once installed, open the Thinkfree Office configuration page in Nextcloud:
+There is a single setting, and it applies to every user on the instance.
 
 ```
-Settings → Administration → Thinkfree
+Settings → Administration → Thinkfree Office
+  → Server settings → "Thinkfree Office Server Address"
 ```
-
-### Configure the Thinkfree Office Server Address
 
 Enter the URL of your Thinkfree Office server:
+
 ```
-https://[your-thinkfree-server-address]/
+https://office.example.com
 ```
 
-> Replace `[your-thinkfree-server-address]` with your actual Thinkfree Office server address.  
-> The server must be accessible from both the Nextcloud instance and end-user browsers.
+Click **Save**. The connector immediately fetches the discovery document from
+that address and reports the result:
 
-If you do not have your own Thinkfree Office deployment, you can use the **default public test server**.
-
-### Configure the JWT Secret
-
-Set the **JWT Secret** value, which is used to securely authenticate and encrypt communication between Nextcloud and Thinkfree Office.
-
-Once saved, the **“Open in Thinkfree Office”** action will automatically appear in the Nextcloud file context menu for supported file types.
+| Result | Meaning |
+|---|---|
+| **WOPI integration enabled** | The server answered and the integration is ready to use. |
+| Saved, but the server could not be reached | The address was stored, but users will not see the **Open in Thinkfree Office** entry. The message explains what failed. |
 
 ---
 
@@ -93,24 +81,47 @@ Once saved, the **“Open in Thinkfree Office”** action will automatically app
 
 ## How It Works
 
-1. When a document is opened, Nextcloud sends a secure request (signed with the JWT secret) to the Thinkfree Office server.
-2. The document is downloaded from Nextcloud and opened for editing in Thinkfree Office.
-3. Upon completion, Thinkfree Office synchronizes all changes back to Nextcloud.
-4. No data is stored outside your environment (if self-hosted).
+1. Nextcloud fetches the discovery document from the Thinkfree Office server to
+   learn which formats it supports and which editor URL to use. The result is
+   cached, so this does not happen on every page load.
+2. When a user opens a file, Nextcloud issues a short-lived access token and opens
+   Thinkfree Office in a new browser tab, pointing it back at Nextcloud.
+3. Thinkfree Office calls the Nextcloud WOPI endpoints to read the file
+   information, download the content, and save changes.
+4. Documents are only ever exchanged between your Nextcloud instance and the
+   Thinkfree Office server you configured.
+
+### Security
+
+Access tokens are signed with your Nextcloud instance secret and are scoped to a
+single file, a single user, and a limited lifetime. There is no shared secret to
+configure or keep in sync.
+
+Incoming WOPI requests are additionally verified against the **proof key** your
+Thinkfree Office server publishes in its discovery document, which confirms that
+a request genuinely originates from that server. This verification is always on.
+
+---
+
+## Troubleshooting
+
+**The "Open in Thinkfree Office" entry is missing.**  
+Open the administration settings and save the server address again. The result
+message shown there explains what failed.
+
+**The editor opens but the document does not load.**  
+Thinkfree Office could not reach Nextcloud. Check that the Nextcloud address is
+resolvable and reachable *from the Thinkfree Office server*, not only from your
+browser. For example, if Nextcloud runs in a container and you set the Thinkfree
+Office address to `localhost`, consider using `http://host.docker.internal:[port]`
+instead.
 
 ---
 
 ## Additional Resources
 
-- Full setup guide:  
-  [How to set up Thinkfree Office for Nextcloud](https://cs.thinkfree.com/en/support/solutions/articles/158000282045-how-to-set-up-thinkfree-office-for-nextcloud)
-
 - Product information:  
   [Thinkfree Office Website](https://www.thinkfree.com)
-
-## Maintainer
-
-Goochul Im ([@goochulim-thinkfree-com](https://github.com/goochulim-thinkfree-com)) — goochul.im@thinkfree.com, Thinkfree Inc.
 
 ---
 

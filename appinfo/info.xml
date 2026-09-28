@@ -4,7 +4,7 @@
 	<name>Thinkfree Office</name>
 	<summary>Thinkfree Office App</summary>
 	<description>This Nextcloud connector integrates Thinkfree Office, a powerful web-based collaborative editor for seamless document viewing, creation, and real-time editing. Designed for teams and businesses of all sizes, it supports word processing, spreadsheets, and presentations with industry-leading compatibility with MS formats. Thinkfree Office is built for effortless deployment across various environments and integrates smoothly with a wide range of platforms and devices. For enhanced security and compliance, it also offers on-premises deployment, keeping all data under the your control.</description>
-	<version>2.0.0</version>
+	<version>3.0.0</version>
 	<namespace>Thinkfree</namespace>
 	<licence>AGPL-3.0-or-later</licence>
 	<author mail="contact@thinkfree.com" homepage="https://thinkfree.com/">Thinkfree Inc.</author>
@@ -15,14 +15,12 @@
     <screenshot>https://raw.githubusercontent.com/lcm-thinkfree-com/thinkfree-nextcloud/main/screenshots/settings.png</screenshot>
     <screenshot>https://raw.githubusercontent.com/lcm-thinkfree-com/thinkfree-nextcloud/main/screenshots/new.png</screenshot>
     <screenshot>https://raw.githubusercontent.com/lcm-thinkfree-com/thinkfree-nextcloud/main/screenshots/open.png</screenshot>
-	<bugs>https://github.com/lcm-thinkfree-com/thinkfree-nextcloud/issues</bugs>
+	<bugs>https://github.com/thinkfree/thinkfree-nextcloud/issues</bugs>
 	<dependencies>
-		<nextcloud min-version="31" max-version="32"/>
+		<nextcloud min-version="31" max-version="35"/>
 	</dependencies>
 	<settings>
         <admin>OCA\Thinkfree\Settings\ThinkfreeAdmin</admin>
         <admin-section>OCA\Thinkfree\Sections\ThinkfreeAdmin</admin-section>
-		<personal>OCA\Thinkfree\Settings\ThinkfreePersonal</personal>
-		<personal-section>OCA\Thinkfree\Sections\ThinkfreePersonal</personal-section>
     </settings>
 </info>
