@@ -226,6 +226,53 @@ class DiscoveryService {
 		return $this->extensionsFrom($xml);
 	}
 
+	/**
+	 * POST 요청은 CSP로 인해 서로 다른 오리진일 경우 차단된다.
+     * 이를 막기 위해 CSP에 클라이언트 서버 주소를 등록해야 한다.
+     *
+     *
+	 * @return string[]
+	 */
+	public function getCachedEditorOrigins(): array {
+		$content = $this->cache->get($this->cacheKey());
+
+		if (!is_string($content) || $content === '') {
+			return [];
+		}
+
+		$xml = $this->parseXml($content);
+
+		if ($xml === null) {
+			return [];
+		}
+
+		$origins = [];
+
+		foreach ($xml->xpath('//action[@urlsrc]') ?: [] as $action) {
+			$origin = $this->originOf((string)$action['urlsrc']);
+
+			if ($origin !== '') {
+				$origins[$origin] = true; // 키로 모아 중복을 없앤다.
+			}
+		}
+
+		return array_keys($origins);
+	}
+
+	/**
+	 * URL 에서 스킴·호스트·포트만 남긴다. 경로와 쿼리는 CSP 가 보지 않는다.
+	 */
+	private function originOf(string $url): string {
+		$parts = parse_url($url);
+
+		if (!isset($parts['scheme'], $parts['host'])) {
+			return '';
+		}
+
+		return $parts['scheme'] . '://' . $parts['host']
+			. (isset($parts['port']) ? ':' . $parts['port'] : '');
+	}
+
 	public function clearCache(): void {
 		$this->cache->remove($this->cacheKey());
 		$this->cache->remove($this->failureKey());

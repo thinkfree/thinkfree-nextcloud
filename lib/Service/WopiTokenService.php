@@ -6,12 +6,15 @@ namespace OCA\Thinkfree\Service;
 
 use OCA\Thinkfree\Crypt;
 use OCP\IConfig;
+use OCP\IRequest;
 
 /**
  * WOPI에 사용되는 액세스 토큰을 만들고 검증하는 서비스
  */
 class WopiTokenService {
-	private const TTL = 10 * 60 * 60;
+    public const ECOSYSTEM_ID = "ecosystem_id";
+
+    private const TTL = 10 * 60 * 60;
 
 	private IConfig $config;
 
@@ -22,13 +25,13 @@ class WopiTokenService {
 	/**
 	 * @return array{0: string, 1: int} the token and its expiry as a unix timestamp
 	 */
-	public function issue(string $userId, string $fileId, bool $canWrite): array {
+	public function issue(string $userId, string $resourceId, bool $canWrite): array {
 		$expires = time() + self::TTL;
 
 		$token = $this->crypt()->createToken([
 			'jti' => bin2hex(random_bytes(16)),
 			'sub' => $userId,
-			'fid' => $fileId,
+			'fid' => $resourceId,
 			'wrt' => $canWrite,
 			'iss' => 'Connector',
 			'aud' => 'WOPI',
@@ -44,7 +47,7 @@ class WopiTokenService {
 	 * @return array{userId: string, canWrite: bool}|null null when the token is
 	 *         invalid, expired or was issued for a different file
 	 */
-	public function verify(?string $token, string $fileId): ?array {
+	public function verify(?string $token, string $resourceId): ?array {
 		if ($token === null || $token === '') {
 			return null;
 		}
@@ -57,7 +60,7 @@ class WopiTokenService {
 				return null;
 			}
 
-			if ((string)$crypt->getJwtClaim($token, 'fid') !== $fileId) {
+			if ((string)$crypt->getJwtClaim($token, 'fid') !== $resourceId) {
 				return null;
 			}
 
@@ -66,11 +69,36 @@ class WopiTokenService {
 				'canWrite' => (bool)$crypt->getJwtClaim($token, 'wrt'),
 			];
 		} catch (\Throwable $e) {
-			// Crypt::getJwtClaim only catches its own namespaced Exception, so
-			// a malformed or expired token surfaces here rather than as null.
 			return null;
 		}
 	}
+
+    /**
+     * fid에 ECOSYSTEM_ID가 claim되어있는 jwt를 반환
+     */
+    public function issueForEcosystem(mixed $userId, mixed $canWrite): array
+    {
+        return $this->issue($userId, self::ECOSYSTEM_ID, $canWrite);
+    }
+
+    /**
+     * 토큰은 쿼리 파라미터로 오거나 bearer 토큰으로 온다.
+     */
+    public function extractToken(IRequest $request): ?string {
+        $token = $request->getParam('access_token');
+
+        if (is_string($token) && $token !== '') {
+            return $token;
+        }
+
+        $authorization = (string)$request->getHeader('Authorization');
+
+        if (stripos($authorization, 'Bearer ') === 0) {
+            return substr($authorization, 7);
+        }
+
+        return null;
+    }
 
     /**
      * NextCloud 시스템 내에서 사용되는 secret을 가져와서 jwt 암호화에 사용함

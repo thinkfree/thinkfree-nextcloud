@@ -66,10 +66,6 @@ class SettingsController extends Controller {
 				$this->appConfig->setValueString('thinkfree', ConnectionConfig::CONFIG_SERVER_ADDRESS, $address);
 			}
 
-			// discovery 문서는 주소별로 캐시되므로, 주소를 바꾸면 옛 항목이
-			// 남아 있다가 엉뚱한 결과를 내놓는다.
-			$this->discoveryService->clearCache();
-
 			// 정규화가 적용된 "방금 저장된" 주소로 확인한다.
 			$response['discovery'] = $this->checkDiscovery($this->connection->getServerAddress());
 		}

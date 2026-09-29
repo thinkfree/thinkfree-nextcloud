@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace OCA\Thinkfree\Controller;
 
-use OCA\Thinkfree\Service\ProofKeyService;
-use OCA\Thinkfree\Service\WopiTokenService;
+use OCA\Thinkfree\Service\ContainerService;
+use OCA\Thinkfree\Service\FileService;
+use OCA\Thinkfree\Util\NewFileResponder;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
@@ -14,8 +15,6 @@ use OCP\AppFramework\Http\Attribute\PublicPage;
 use OCP\AppFramework\Http\DataDownloadResponse;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\AppFramework\Http\Response;
-use OCP\Files\File;
-use OCP\Files\IRootFolder;
 use OCP\IRequest;
 use OCP\IUserManager;
 use Psr\Log\LoggerInterface;
@@ -24,30 +23,33 @@ use Psr\Log\LoggerInterface;
  * WOPI 엔드포인트를 구현한 컨트롤러.
  * appinfo/routes.php에 의해 라우팅된다.
  *
+ * 파일을 다루는 일은 FileService 가 맡는다. 여기서는 요청을 넘기고, 돌아온
+ * 결과를 상태 코드와 응답 본문으로 옮기는 것까지만 한다.
+ *
  * @see https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/
  */
-class WopiController extends Controller {
-	private IRootFolder $rootFolder;
+class WopiFilesController extends Controller {
+	private FileService $fileService;
 	private IUserManager $userManager;
-	private WopiTokenService $tokenService;
-	private ProofKeyService $proofKeyService;
 	private LoggerInterface $logger;
+    private ContainerService $containerService;
+    private NewFileResponder $responder;
 
 	public function __construct(
-		string $appName,
-		IRequest $request,
-		IRootFolder $rootFolder,
-		IUserManager $userManager,
-		WopiTokenService $tokenService,
-		ProofKeyService $proofKeyService,
-		LoggerInterface $logger,
+        string $appName,
+        IRequest $request,
+        FileService $fileService,
+        IUserManager $userManager,
+        LoggerInterface $logger,
+        ContainerService $containerService,
+        NewFileResponder $responder
 	) {
 		parent::__construct($appName, $request);
-		$this->rootFolder = $rootFolder;
+		$this->fileService = $fileService;
 		$this->userManager = $userManager;
-		$this->tokenService = $tokenService;
-		$this->proofKeyService = $proofKeyService;
 		$this->logger = $logger;
+        $this->containerService = $containerService;
+        $this->responder = $responder;
 	}
 
 	/**
@@ -58,7 +60,7 @@ class WopiController extends Controller {
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
 	public function checkFileInfo(string $fileId): JSONResponse {
-		$session = $this->resolve($fileId);
+		$session = $this->fileService->resolve($this->request, $fileId);
 		if ($session === null) {
 			return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
 		}
@@ -70,16 +72,20 @@ class WopiController extends Controller {
 		return new JSONResponse([
 			'BaseFileName' => $file->getName(),
 			'Size' => $file->getSize(),
-			'Version' => (string)$file->getMTime(),
+			'Version' => (string)$file->getEtag(),
 			'OwnerId' => $userId,
 			'UserId' => $userId,
 			'UserFriendlyName' => $user !== null ? $user->getDisplayName() : $userId,
 			'UserCanWrite' => $canWrite,
-			'UserCanNotWriteRelative' => true,
+			// true 면 클라이언트가 "다른 이름으로 저장"을 메뉴에서 아예 없앤다.
+			// 새 파일은 원본과 같은 폴더에 생기므로 그 폴더의 생성 권한으로 본다.
+			'UserCanNotWriteRelative' => !$this->fileService->canWriteRelative($file),
 			'SupportsUpdate' => $canWrite,
 			'SupportsLocks' => false,
 			'SupportsRename' => false,
 			'LastModifiedTime' => gmdate('Y-m-d\TH:i:s.u\Z', $file->getMTime()),
+            'SupportsContainers' => true,
+            'SupportsEcosystem' => true
 		]);
 	}
 
@@ -90,7 +96,7 @@ class WopiController extends Controller {
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
 	public function getFile(string $fileId): Response {
-		$session = $this->resolve($fileId);
+		$session = $this->fileService->resolve($this->request, $fileId);
 		if ($session === null) {
 			return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
 		}
@@ -124,7 +130,7 @@ class WopiController extends Controller {
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
 	public function putFile(string $fileId): Response {
-		$session = $this->resolve($fileId); // proof key 및 액세스 토큰 검증
+		$session = $this->fileService->resolve($this->request, $fileId); // proof key 및 액세스 토큰 검증
 		if ($session === null) {
 			return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
 		}
@@ -136,27 +142,7 @@ class WopiController extends Controller {
 		}
 
 		try {
-			$in = fopen('php://input', 'rb'); // request body로 들어온 바이너리 스트림을 받는다.
-			if ($in === false) {
-				throw new \RuntimeException('Cannot read request body');
-			}
-
-			$out = $file->fopen('w'); // 바이너리 스트림을 쓰기 위한 file open
-			if ($out === false) {
-				fclose($in);
-				throw new \RuntimeException('Cannot open target file for writing');
-			}
-
-			while (!feof($in)) {
-				$chunk = fread($in, 8192);
-				if ($chunk === false) {
-					break;
-				}
-				fwrite($out, $chunk);
-			}
-
-			fclose($in);
-			fclose($out);
+			$this->fileService->writeToFile($file);
 		} catch (\Throwable $e) {
 			$this->logger->error('WOPI PutFile failed for file ' . $fileId, [
 				'app' => $this->appName,
@@ -173,19 +159,23 @@ class WopiController extends Controller {
 	}
 
 	/**
-     * LOCK과 관련된 엔드포인트, 하지만 TFO는 동시편집을 지원하므로 LOCK을 굳이 구현할 필요가 없어 미구현 상태로 둔다.
-     * LOCK과 관련된 어떠한 요청이 오던, 성공했다는 응답을 보낸다.
+     * X-WOPI-Override 헤더로 동작이 갈리는 엔드포인트.
+     *
+     * PUT_RELATIVE 는 "다른 이름으로 저장"이다.
+     *
+     * LOCK 계열은 TFO 가 자체 동시편집을 지원하므로 구현하지 않고, 어떤 요청이
+     * 오든 성공으로 답한다.
 	 */
 	#[PublicPage]
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
 	public function postFile(string $fileId): Response {
-		$session = $this->resolve($fileId);
+		$session = $this->fileService->resolve($this->request, $fileId);
 		if ($session === null) {
 			return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
 		}
 
-		[$file] = $session;
+		[$file, $userId] = $session;
 		$override = strtoupper((string)$this->request->getHeader('X-WOPI-Override'));
 
 		$response = new Response();
@@ -201,6 +191,8 @@ class WopiController extends Controller {
 				$response->addHeader('X-WOPI-Lock', '');
 
 				return $response;
+			case 'PUT_RELATIVE':
+				return $this->responder->toResponse($this->fileService->putRelative($this->request, $file), $userId);
 			default:
 				$this->logger->info('Unsupported WOPI override "' . $override . '"', [
 					'app' => $this->appName,
@@ -210,69 +202,31 @@ class WopiController extends Controller {
 		}
 	}
 
-	/**
-	 * proof 키와 토큰을 검증한 다음, 성공하면 file, userId, canWrite를 사용한다.
-     * File 조작 엔드포인트 요청은 모두 이 메서드를 호출하여 검증받아야 한다.
-	 *
-	 * @return array{0: File, 1: string, 2: bool}|null
-	 */
-	private function resolve(string $fileId): ?array {
-		$token = $this->extractToken();
+    /**
+     * fileId를 통해 해당 파일의 조상 폴더들을 순서대로 반환함
+     * <pre>
+     * {
+     *   "AncestorsWithRootFirst": [
+     *     { "Name": "root",        "Url": "http://.../wopi/containers/<id1>?access_token=<token1>" },
+     *     { "Name": "grandparent", "Url": "http://.../wopi/containers/<id2>?access_token=<token2>" },
+     *     { "Name": "parent",      "Url": "http://.../wopi/containers/<id3>?access_token=<token3>" }
+     *   ]
+     * }
+     * </pre>
+    */
+    #[PublicPage]
+    #[NoAdminRequired]
+    #[NoCSRFRequired]
+    public function enumerateAncestors(string $fileId): JSONResponse {
+        $session = $this->fileService->resolve($this->request, $fileId);
+        if ($session === null) {
+            return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
+        }
 
-		// 토큰보다 proof 키를 먼저 확인해서, 유효하지 않으면 실패
-		if (!$this->proofKeyService->verify($this->request, (string)$token)) {
-			return null;
-		}
+        [$file, $userId] = $session;
 
-        // 토큰 검증
-		$claims = $this->tokenService->verify($token, $fileId);
-
-		if ($claims === null) { // 검증이 실패할 때 null 리턴
-			$this->logger->warning('Rejected WOPI request for file ' . $fileId . ': invalid access token', [
-				'app' => $this->appName,
-			]);
-
-			return null;
-		}
-
-		$userId = $claims['userId'];
-
-		try {
-			$nodes = $this->rootFolder->getUserFolder($userId)->getById((int)$fileId);
-		} catch (\Throwable $e) {
-			$this->logger->error('WOPI lookup failed for file ' . $fileId, [
-				'app' => $this->appName,
-				'exception' => $e,
-			]);
-
-			return null;
-		}
-
-		$file = $nodes[0] ?? null;
-
-		if (!$file instanceof File) {
-			$this->logger->warning('WOPI request for unknown file ' . $fileId, ['app' => $this->appName]);
-
-			return null;
-		}
-
-		return [$file, $userId, $claims['canWrite']];
-	}
-
-	/** The token may arrive as a query parameter or as a bearer token. */
-	private function extractToken(): ?string {
-		$token = $this->request->getParam('access_token');
-
-		if (is_string($token) && $token !== '') {
-			return $token;
-		}
-
-		$authorization = (string)$this->request->getHeader('Authorization');
-
-		if (stripos($authorization, 'Bearer ') === 0) {
-			return substr($authorization, 7);
-		}
-
-		return null;
-	}
+        return new JSONResponse([
+            'AncestorsWithRootFirst' => $this->containerService->getAncestors($file, $userId),
+        ]);
+    }
 }

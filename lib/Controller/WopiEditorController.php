@@ -58,7 +58,7 @@ class WopiEditorController extends Controller {
 
 	/**
      * wopi.js의 run 콜백이 호출하고 appinfo/routes.php에 의해 라우팅된다.
-     * 브라우저가 새 탭에서 열 웹오피스 주소를 전달한다.
+     * 브라우저가 새 탭에서 웹오피스로 POST할 주소와 액세스 토큰을 전달한다.
 	 */
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
@@ -69,7 +69,11 @@ class WopiEditorController extends Controller {
 			return new JSONResponse(['error' => $editorUrl['error']], $editorUrl['status']);
 		}
 
-		return new JSONResponse(['url' => $editorUrl['url']]);
+		return new JSONResponse([
+			'url' => $editorUrl['url'],
+			'token' => $editorUrl['token'],
+			'ttl' => $editorUrl['ttl'],
+		]);
 	}
 
 	/**
@@ -77,7 +81,8 @@ class WopiEditorController extends Controller {
      * <p>
      *     <img src="../../docs/url_generate.png">
      * </p>
-	 * @return array{url: string, title: string}|array{error: string, status: int}
+
+	 * @return array{url: string, token: string, ttl: string, title: string}|array{error: string, status: int}
 	 */
 	private function buildEditorUrl(string $fileId): array {
 		$user = $this->userSession->getUser();
@@ -136,10 +141,9 @@ class WopiEditorController extends Controller {
 		return [ // URL 조립하기
 			'url' => $urlSrc
 				. 'WOPISrc=' . rawurlencode($wopiSrc)
-				. '&access_token=' . rawurlencode($token)
-				// WOPI expects the TTL as a unix timestamp in milliseconds.
-				. '&access_token_ttl=' . rawurlencode((string)($expires * 1000))
 				. '&lang=' . rawurlencode(str_replace('_', '-', $this->l10n->getLanguageCode() ?: 'en')),
+			'token' => $token,
+			'ttl' => (string)($expires * 1000),
 			'title' => $file->getName(),
 		];
 	}
