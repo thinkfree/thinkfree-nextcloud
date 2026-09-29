@@ -6,21 +6,15 @@ namespace OCA\Thinkfree\Controller;
 
 use OCA\Thinkfree\Service\ContainerService;
 use OCA\Thinkfree\Service\FileService;
-use OCA\Thinkfree\Service\WopiTokenService;
+use OCA\Thinkfree\Util\WopiUrlBuilder;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\Attribute\PublicPage;
-use OCP\AppFramework\Http\DataDownloadResponse;
 use OCP\AppFramework\Http\JSONResponse;
-use OCP\AppFramework\Http\Response;
-use OCP\Files\File;
 use OCP\Files\IRootFolder;
 use OCP\IRequest;
-use OCP\IURLGenerator;
-use OCP\IUserManager;
-use Psr\Log\LoggerInterface;
 
 /**
  * Ecosystem 오퍼레이션을 구현한 컨트롤러
@@ -29,30 +23,23 @@ use Psr\Log\LoggerInterface;
 class WopiEcosystemController extends Controller
 {
     private FileService $fileService;
-    private WopiTokenService $tokenService;
-    private IUserManager $userManager;
-    private IURLGenerator $urlGenerator;
-    private LoggerInterface $logger;
     private IRootFolder $rootFolder;
     private ContainerService $containerService;
+    private WopiUrlBuilder $urlBuilder;
 
     public function __construct(
         string $appName,
         IRequest $request,
         FileService $fileService,
-        WopiTokenService $tokenService,
-        IUserManager $userManager,
-        IURLGenerator $urlGenerator,
-        LoggerInterface $logger,
-        ContainerService $containerService
+        IRootFolder $rootFolder,
+        ContainerService $containerService,
+        WopiUrlBuilder $urlBuilder
     ) {
         parent::__construct($appName, $request);
         $this->fileService = $fileService;
-        $this->tokenService = $tokenService;
-        $this->userManager = $userManager;
-        $this->urlGenerator = $urlGenerator;
-        $this->logger = $logger;
+        $this->rootFolder = $rootFolder;
         $this->containerService = $containerService;
+        $this->urlBuilder = $urlBuilder;
     }
 
     #[PublicPage]
@@ -64,13 +51,10 @@ class WopiEcosystemController extends Controller
             return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
         }
 
-        [, $userId, $canWrite] = $session;
-
-        [$token] = $this->tokenService->issueForEcosystem($userId, $canWrite);
+        [, $userId] = $session;
 
         return new JSONResponse([
-            'Url' => $this->urlGenerator->linkToRouteAbsolute($this->appName . '.wopiEcosystem.check')
-                . '?access_token=' . rawurlencode($token),
+            'Url' => $this->urlBuilder->forEcosystem($userId),
         ]);
     }
 
@@ -98,18 +82,10 @@ class WopiEcosystemController extends Controller
         }
 
         $root = $this->rootFolder->getUserFolder($userId); // 이 유저의 루트 폴더 가져오기
-        $containerId = (string)$root->getId(); // 이 폴더의 id를 containerId로 사용
-
-        [$token] = $this->tokenService->issue($userId, $containerId, false);
-
-        $url = $this->urlGenerator->linkToRouteAbsolute(
-                $this->appName . '.wopiContainer.checkContainerInfo',
-                ['containerId' => $containerId]
-            ) . '?access_token=' . rawurlencode($token);
 
         return new JSONResponse([
             'ContainerPointer' => [
-                'Url' => $url,
+                'Url' => $this->urlBuilder->forContainer($root, $userId),
                 'Name' => $root->getName(),
             ],
             'ContainerInfo' => [

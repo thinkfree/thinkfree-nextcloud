@@ -6,6 +6,7 @@ namespace OCA\Thinkfree\Controller;
 
 use OCA\Thinkfree\Service\DiscoveryService;
 use OCA\Thinkfree\Service\WopiTokenService;
+use OCA\Thinkfree\Util\WopiUrlBuilder;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
@@ -15,7 +16,6 @@ use OCP\Files\File;
 use OCP\Files\IRootFolder;
 use OCP\IL10N;
 use OCP\IRequest;
-use OCP\IURLGenerator;
 use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 
@@ -31,7 +31,7 @@ class WopiEditorController extends Controller {
 	private IUserSession $userSession;
 	private DiscoveryService $discoveryService;
 	private WopiTokenService $tokenService;
-	private IURLGenerator $urlGenerator;
+	private WopiUrlBuilder $urlBuilder;
 	private IL10N $l10n;
 	private LoggerInterface $logger;
 
@@ -42,7 +42,7 @@ class WopiEditorController extends Controller {
 		IUserSession $userSession,
 		DiscoveryService $discovery,
 		WopiTokenService $tokenService,
-		IURLGenerator $urlGenerator,
+		WopiUrlBuilder $urlBuilder,
 		IL10N $l10n,
 		LoggerInterface $logger,
 	) {
@@ -51,7 +51,7 @@ class WopiEditorController extends Controller {
 		$this->userSession = $userSession;
 		$this->discoveryService = $discovery;
 		$this->tokenService = $tokenService;
-		$this->urlGenerator = $urlGenerator;
+		$this->urlBuilder = $urlBuilder;
 		$this->l10n = $l10n;
 		$this->logger = $logger;
 	}
@@ -133,10 +133,7 @@ class WopiEditorController extends Controller {
 
 		[$token, $expires] = $this->tokenService->issue($userId, $fileId, $canWrite); // 액세스 토큰 생성
 
-		$wopiSrc = $this->urlGenerator->linkToRouteAbsolute(
-			$this->appName . '.wopi.checkFileInfo', // appinfo/routes.php의 wopi#checkFileInfo 항목을 토대로 URL 생성
-			['fileId' => $fileId] // fileId를 URL에 붙이기
-		);
+		$wopiSrc = $this->urlBuilder->wopiSrc($fileId); // 토큰은 폼 POST 본문으로 따로 가므로 붙이지 않는다
 
 		return [ // URL 조립하기
 			'url' => $urlSrc
