@@ -2,35 +2,71 @@ name: Release
 
 on:
   push:
-    branches: [release]
+    # release/v3.0.0 처럼 release/ 로 시작하는 브랜치에 푸시하면 돈다.
+    # 푸시 이벤트는 푸시한 브랜치 안의 이 파일을 쓰므로, 릴리즈 브랜치는 main 에서 만든다.
+    branches:
+      - 'release/**'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+# 같은 브랜치에 연달아 푸시해도 릴리즈 작업이 겹쳐 돌지 않게 한다.
+# 진행 중인 작업은 취소하지 않고 끝까지 돌린 뒤 다음 작업을 시작한다.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # 외부 액션은 태그가 아니라 커밋 SHA 로 고정한다. 태그는 옮겨질 수 있다.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: 버전 읽기
         run: |
           VERSION=$(grep -oP '(?<=<version>)[^<]+' appinfo/info.xml)
           test -n "$VERSION" || { echo "appinfo/info.xml 에서 버전을 읽지 못했다"; exit 1; }
+
+          # release/v3.0.0 으로 푸시했다면 info.xml 도 3.0.0 이어야 한다.
+          # 싱크가 덜 된 브랜치가 옛 버전 태그로 릴리즈되는 것을 막는다.
+          if [[ "$GITHUB_REF_NAME" == release/v* ]]; then
+            BRANCH_VERSION="${GITHUB_REF_NAME#release/v}"
+            test "$BRANCH_VERSION" = "$VERSION" \
+              || { echo "브랜치 버전($BRANCH_VERSION)과 info.xml 버전($VERSION)이 다르다"; exit 1; }
+          fi
+
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "버전 $VERSION"
+
+      - name: 기존 릴리즈 확인
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 같은 버전을 두 번 올리지 않는다. 초안도 포함해 확인한다.
+          # 다시 올려야 하면 GitHub 에서 기존 초안·태그를 지운 뒤 다시 푸시한다.
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
+            echo "태그 v$VERSION 가 이미 있다"
+            exit 1
+          fi
+          if gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -qx "v$VERSION"; then
+            echo "v$VERSION 릴리즈(초안 포함)가 이미 있다"
+            exit 1
+          fi
+          echo "v$VERSION 릴리즈 없음"
 
       - name: 키·인증서 복원
         env:
           APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
           APP_PUBLIC_KEY: ${{ secrets.APP_PUBLIC_KEY }}
         run: |
+          # umask 를 먼저 걸어 키 파일이 만들어지는 순간부터 소유자만 읽을 수 있게 한다.
+          umask 077
           mkdir -p "$HOME/certs"
-          echo "$APP_PRIVATE_KEY" > "$HOME/certs/thinkfree.key"
-          echo "$APP_PUBLIC_KEY" > "$HOME/certs/thinkfree.crt"
-          chmod 600 "$HOME/certs/thinkfree.key"
+          printf '%s\n' "$APP_PRIVATE_KEY" > "$HOME/certs/thinkfree.key"
+          printf '%s\n' "$APP_PUBLIC_KEY" > "$HOME/certs/thinkfree.crt"
 
       - name: 키 쌍 확인
         run: |
@@ -42,8 +78,9 @@ jobs:
       - name: 스테이징 구성
         run: |
           # 배포판 tarball에 필요하지 않은 파일들을 모두 제외하고 tarball을 만든다.
+          # vendor-bin 은 개발 도구용 composer.json 이라 배포판에 필요 없다.
           mkdir -p staging/thinkfree
-          tar -c --exclude=./.git --exclude=./.github --exclude=./staging --exclude=./dist --exclude=./screenshots --exclude=./appinfo/signature.json --exclude=*.map . | tar -x -C staging/thinkfree
+          tar -c --exclude=./.git --exclude=./.github --exclude=./staging --exclude=./dist --exclude=./screenshots --exclude=./vendor-bin --exclude=./appinfo/signature.json --exclude=*.map . | tar -x -C staging/thinkfree
 
       - name: 배포용 vendor 설치
         run: |
@@ -68,11 +105,17 @@ jobs:
         run: |
           openssl dgst -sha512 -sign "$HOME/certs/thinkfree.key" "dist/thinkfree-$VERSION.tar.gz" | openssl base64 -A > "dist/thinkfree-$VERSION.sig"
 
+      # 키가 필요한 단계는 여기까지다. 외부 액션을 부르기 전에 지운다.
+      # 앞 단계가 실패해도 지우도록 always() 를 붙인다.
+      - name: 키 삭제
+        if: always()
+        run: rm -rf "$HOME/certs"
+
       - name: 패키지 내용 확인
         run: |
           LIST=$(tar -tzf "dist/thinkfree-$VERSION.tar.gz")
           echo "파일 수 $(echo "$LIST" | wc -l)"
-          BAD=$(echo "$LIST" | grep -E "^thinkfree/(src|node_modules)/|[.]map$|[.]key$" || true)
+          BAD=$(echo "$LIST" | grep -E "^thinkfree/(src|node_modules|tests|vendor-bin)/|[.]map$|[.]key$" || true)
           if [ -n "$BAD" ]; then
             echo "배포하면 안 되는 파일이 들어 있다"
             echo "$BAD"
@@ -81,7 +124,7 @@ jobs:
           echo "제외 확인 완료"
 
       - name: 릴리즈 초안 생성
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}
