@@ -30,12 +30,15 @@ jobs:
           VERSION=$(grep -oP '(?<=<version>)[^<]+' appinfo/info.xml)
           test -n "$VERSION" || { echo "appinfo/info.xml 에서 버전을 읽지 못했다"; exit 1; }
 
-          # release/v3.0.0 으로 푸시했다면 info.xml 도 3.0.0 이어야 한다.
+          # 브랜치 이름의 v 뒤가 info.xml 버전으로 시작해야 한다.
+          # release/v3.0.0, release/v3.0.0-20261007 은 통과하고, info.xml 이 아직 2.0.0 이면 멈춘다.
           # 싱크가 덜 된 브랜치가 옛 버전 태그로 릴리즈되는 것을 막는다.
           if [[ "$GITHUB_REF_NAME" == release/v* ]]; then
             BRANCH_VERSION="${GITHUB_REF_NAME#release/v}"
-            test "$BRANCH_VERSION" = "$VERSION" \
-              || { echo "브랜치 버전($BRANCH_VERSION)과 info.xml 버전($VERSION)이 다르다"; exit 1; }
+            case "$BRANCH_VERSION" in
+              "$VERSION" | "$VERSION"-*) ;;
+              *) echo "브랜치 버전($BRANCH_VERSION)이 info.xml 버전($VERSION)으로 시작하지 않는다"; exit 1 ;;
+            esac
           fi
 
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
