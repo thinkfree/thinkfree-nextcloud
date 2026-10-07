@@ -23,7 +23,7 @@ class ThinkfreeAdmin implements IIconSection {
      * 관리자 메뉴에 표시될 이름(라벨)을 반환
      */
     public function getName(): string {
-        return $this->l->t('Thinkfree Admin');
+        return $this->l->t('Thinkfree Office');
     }
 
     /**
