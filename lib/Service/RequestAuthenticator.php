@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace OCA\Thinkfree\Service;
 
 use OCA\Thinkfree\AppInfo\Application;
+use OCA\Thinkfree\Exception\InvalidTokenException;
+use OCA\Thinkfree\Exception\ProofValidationException;
 use OCP\IRequest;
 use OCP\IUserManager;
 use Psr\Log\LoggerInterface;
 
 /**
  * WOPI 요청을 검증한다. 파일, 폴더, 에코시스템 요청이 모두 이곳을 거친다.
+ * WopiAuthMiddleware 가 #[WopiAuthRequired] 액션을 실행하기 전에 호출
  *
  *   1. 액세스 토큰   요청 대상(자원 ID)에 묶인 토큰인지, 만료되지 않았는지
  *   2. 계정          토큰의 계정이 아직 활성 상태인지
@@ -42,9 +45,11 @@ class RequestAuthenticator {
 	 *
 	 * @param string $resourceId 파일 ID, 폴더 ID 또는 WopiTokenService::ECOSYSTEM_ID
 	 * @param string $target 로그에 남길 요청 대상 (예: "file 123")
-	 * @return array{userId: string, canWrite: bool, expires: int}|null 검증이 실패하면 null
+	 * @return array{userId: string, canWrite: bool, expires: int}
+	 * @throws InvalidTokenException 토큰이 올바르지 않거나 만료되었을 때, 계정이 삭제되었거나 비활성일 때
+	 * @throws ProofValidationException proof 서명을 검증하지 못했을 때. 이유는 ProofKeyService 가 로그에 남긴다
 	 */
-	public function authenticate(IRequest $request, string $resourceId, string $target): ?array {
+	public function authenticate(IRequest $request, string $resourceId, string $target): array {
 		$token = $this->tokenService->extractToken($request);
 
 		// 1. 액세스 토큰
@@ -55,7 +60,7 @@ class RequestAuthenticator {
 				'app' => Application::APP_ID,
 			]);
 
-			return null;
+			throw new InvalidTokenException();
 		}
 
 		// 2. 계정
@@ -67,12 +72,12 @@ class RequestAuthenticator {
 				'app' => Application::APP_ID,
 			]);
 
-			return null;
+			throw new InvalidTokenException();
 		}
 
 		// 3. ProofKey 검증
 		if (!$this->proofKeyService->verify($request, (string)$token)) {
-			return null;
+			throw new ProofValidationException();
 		}
 
 		return $claims;

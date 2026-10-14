@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace OCA\Thinkfree\Controller;
 
+use OCA\Thinkfree\Middleware\Wopi\WopiAuthRequired;
+use OCA\Thinkfree\Middleware\Wopi\WopiContext;
+use OCA\Thinkfree\Middleware\Wopi\WopiController;
+use OCA\Thinkfree\Middleware\Wopi\WopiResource;
 use OCA\Thinkfree\Service\ContainerService;
 use OCA\Thinkfree\Service\FileService;
 use OCA\Thinkfree\Util\NewFileResponder;
+use OCA\Thinkfree\Util\WopiUrlBuilder;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
@@ -29,14 +34,20 @@ use Psr\Log\LoggerInterface;
  * 파일을 다루는 일은 FileService 가 맡는다. 여기서는 요청을 넘기고, 돌아온
  * 결과를 상태 코드와 응답 본문으로 옮기는 것까지만 한다.
  *
+ * 요청 검증과 파일 조회는 WopiAuthMiddleware 가 액션 전에 마치고 WopiContext 에
+ * 넣어 둔다. 검증에 실패한 요청은 액션까지 오지 않는다.
+ *
  * @see https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/
  */
+#[WopiController]
 class WopiFilesController extends Controller {
 	private FileService $fileService;
 	private IUserManager $userManager;
 	private LoggerInterface $logger;
     private ContainerService $containerService;
     private NewFileResponder $responder;
+	private WopiContext $context;
+	private WopiUrlBuilder $urlBuilder;
 
 	public function __construct(
         string $appName,
@@ -45,7 +56,9 @@ class WopiFilesController extends Controller {
         IUserManager $userManager,
         LoggerInterface $logger,
         ContainerService $containerService,
-        NewFileResponder $responder
+        NewFileResponder $responder,
+		WopiContext $context,
+		WopiUrlBuilder $urlBuilder,
 	) {
 		parent::__construct($appName, $request);
 		$this->fileService = $fileService;
@@ -53,6 +66,8 @@ class WopiFilesController extends Controller {
 		$this->logger = $logger;
         $this->containerService = $containerService;
         $this->responder = $responder;
+		$this->context = $context;
+		$this->urlBuilder = $urlBuilder;
 	}
 
 	/**
@@ -62,13 +77,11 @@ class WopiFilesController extends Controller {
 	#[PublicPage]
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
+	#[WopiAuthRequired(WopiResource::File)]
 	public function checkFileInfo(string $fileId): JSONResponse {
-		$session = $this->fileService->resolve($this->request, $fileId);
-		if ($session === null) {
-			return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
-		}
-
-		[$file, $userId, $canWrite] = $session;
+		$file = $this->context->getFile();
+		$userId = $this->context->getUserId();
+		$canWrite = $this->context->canWrite();
 
 		$user = $this->userManager->get($userId);
 
@@ -89,7 +102,11 @@ class WopiFilesController extends Controller {
 			'LastModifiedTime' => gmdate('Y-m-d\TH:i:s.u\Z', $file->getMTime()),
             'SupportsContainers' => true,
             'SupportsDeleteFile' => true,
-            'SupportsEcosystem' => true
+            'SupportsEcosystem' => true,
+			// 이 파일을 다시 여는 호스트 페이지. 토큰이 곧 만료되거나 세션이 만료되면 웹오피스가 사용자를 이 주소로
+			// 보내고, Nextcloud 가 로그인한 사용자에게 새 토큰을 발급해 편집기를 다시 띄운다.
+			'HostEditUrl' => $this->urlBuilder->hostEditUrl((string)$file->getId()),
+			'HostViewUrl' => $this->urlBuilder->hostViewUrl((string)$file->getId()),
 		]);
 	}
 
@@ -99,13 +116,9 @@ class WopiFilesController extends Controller {
 	#[PublicPage]
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
+	#[WopiAuthRequired(WopiResource::File)]
 	public function getFile(string $fileId): Response {
-		$session = $this->fileService->resolve($this->request, $fileId);
-		if ($session === null) {
-			return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
-		}
-
-		[$file] = $session;
+		$file = $this->context->getFile();
 
 		try {
 			$response = new DataDownloadResponse(
@@ -133,16 +146,12 @@ class WopiFilesController extends Controller {
 	#[PublicPage]
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
+	#[WopiAuthRequired(WopiResource::File)]
 	public function putFile(string $fileId): Response {
-		$session = $this->fileService->resolve($this->request, $fileId); // proof key 및 액세스 토큰 검증
-		if ($session === null) {
-			return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
-		}
-
-		[$file, , $canWrite] = $session;
+		$file = $this->context->getFile();
 
 		// 명세상 쓸 권한이 없으면 403 이 아니라 404 로 응답한다.
-		if (!$canWrite) {
+		if (!$this->context->canWrite()) {
 			return new JSONResponse([], Http::STATUS_NOT_FOUND);
 		}
 
@@ -178,13 +187,9 @@ class WopiFilesController extends Controller {
 	#[PublicPage]
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
+	#[WopiAuthRequired(WopiResource::File)]
 	public function postFile(string $fileId): Response {
-		$session = $this->fileService->resolve($this->request, $fileId);
-		if ($session === null) {
-			return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
-		}
-
-		[$file, $userId, $canWrite, $expires] = $session;
+		$file = $this->context->getFile();
 		$override = strtoupper((string)$this->request->getHeader('X-WOPI-Override'));
 
 		$response = new Response();
@@ -201,9 +206,13 @@ class WopiFilesController extends Controller {
 
 				return $response;
 			case 'PUT_RELATIVE':
-				return $this->responder->toResponse($this->fileService->putRelative($this->request, $file), $userId, $expires);
+				return $this->responder->toResponse(
+					$this->fileService->putRelative($this->request, $file),
+					$this->context->getUserId(),
+					$this->context->getExpires(),
+				);
 			case 'DELETE':
-				return $this->deleteFileResponse($file, $canWrite);
+				return $this->deleteFileResponse($file, $this->context->canWrite());
 			default:
 				$this->logger->info('Unsupported WOPI override "' . $override . '"', [
 					'app' => $this->appName,
@@ -250,16 +259,14 @@ class WopiFilesController extends Controller {
     #[PublicPage]
     #[NoAdminRequired]
     #[NoCSRFRequired]
+    #[WopiAuthRequired(WopiResource::File)]
     public function enumerateAncestors(string $fileId): JSONResponse {
-        $session = $this->fileService->resolve($this->request, $fileId);
-        if ($session === null) {
-            return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
-        }
-
-        [$file, $userId, , $expires] = $session;
-
         return new JSONResponse([
-            'AncestorsWithRootFirst' => $this->containerService->getAncestors($file, $userId, $expires),
+            'AncestorsWithRootFirst' => $this->containerService->getAncestors(
+                $this->context->getFile(),
+                $this->context->getUserId(),
+                $this->context->getExpires(),
+            ),
         ]);
     }
 }

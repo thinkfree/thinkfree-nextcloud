@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\Thinkfree\Service;
 
 use OCA\Thinkfree\AppInfo\Application;
+use OCA\Thinkfree\Exception\ResourceNotFoundException;
 use OCA\Thinkfree\Util\FileNameResolver;
 use OCA\Thinkfree\Util\NewFileResult;
 use OCP\Files\File;
@@ -28,57 +29,34 @@ class FileService {
 
 	private IRootFolder $rootFolder;
 	private LoggerInterface $logger;
-	private RequestAuthenticator $authenticator;
 	private FileNameResolver $nameResolver;
 
 	public function __construct(
 		IRootFolder $rootFolder,
 		LoggerInterface $logger,
-		RequestAuthenticator $authenticator,
 		FileNameResolver $nameResolver,
 	) {
 		$this->rootFolder = $rootFolder;
 		$this->logger = $logger;
-		$this->authenticator = $authenticator;
 		$this->nameResolver = $nameResolver;
 	}
 
 	/**
-	 * 요청을 확인한 다음, 성공하면 file, userId, canWrite, expires 를 돌려준다.
+	 * 사용자의 파일 중에서 $fileId를 찾아 File로 리턴
 	 *
-	 * File 조작 엔드포인트 요청은 모두 이 메서드를 거쳐야 한다.
 	 *
-	 * @return array{0: File, 1: string, 2: bool, 3: int}|null
+	 * @throws ResourceNotFoundException 파일이 없거나, ID 가 가리키는 것이 폴더일 때
 	 */
-	public function resolve(IRequest $request, string $fileId): ?array {
-		$claims = $this->authenticator->authenticate($request, $fileId, 'file ' . $fileId);
-
-		if ($claims === null) {
-			return null;
-		}
-
-		$userId = $claims['userId'];
-
-		try {
-			$nodes = $this->rootFolder->getUserFolder($userId)->getById((int)$fileId);
-		} catch (\Throwable $e) {
-			$this->logger->error('WOPI lookup failed for file ' . $fileId, [
-				'app' => Application::APP_ID,
-				'exception' => $e,
-			]);
-
-			return null;
-		}
-
-		$file = $nodes[0] ?? null;
+	public function findFile(string $userId, string $fileId): File {
+		$file = $this->rootFolder->getUserFolder($userId)->getById((int)$fileId)[0] ?? null;
 
 		if (!$file instanceof File) {
 			$this->logger->warning('WOPI request for unknown file ' . $fileId, ['app' => Application::APP_ID]);
 
-			return null;
+			throw new ResourceNotFoundException();
 		}
 
-		return [$file, $userId, $claims['canWrite'], $claims['expires']];
+		return $file;
 	}
 
 	/**

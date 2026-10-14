@@ -4,7 +4,9 @@ OC.L10N.register(
         "Open in Thinkfree Office": "Thinkfree Office에서 열기",
         "New Excel Document": "새 엑셀 문서",
         "New Word Document": "새 워드 문서",
-        "New Presentation Document": "새 프레젠테이션 문서"
+        "New Presentation Document": "새 프레젠테이션 문서",
+        "Failed to open the requested file.": "파일을 열지 못했습니다.",
+        "Opening Thinkfree Office…": "Thinkfree Office를 여는 중…"
     },
     "nplurals=1; plural=0;"
 );

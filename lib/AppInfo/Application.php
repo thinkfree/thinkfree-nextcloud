@@ -17,6 +17,7 @@ use OCP\EventDispatcher\IEventDispatcher;
 use OCA\Files\Event\LoadAdditionalScriptsEvent;
 use OCP\Security\CSP\AddContentSecurityPolicyEvent;
 use OCA\Thinkfree\Listener\CspListener;
+use OCA\Thinkfree\Middleware\WopiAuthMiddleware;
 
 class Application extends App implements IBootstrap {
 	public const APP_ID = 'thinkfree';
@@ -37,6 +38,9 @@ class Application extends App implements IBootstrap {
 
 		// 웹오피스로 폼을 제출할 수 있도록 CSP form-action 에 그 주소를 추가한다
 		$context->registerEventListener(AddContentSecurityPolicyEvent::class, CspListener::class);
+
+		// #[WopiAuthRequired] 액션은 실행 전에 이 미들웨어가 요청을 검증한다. 이 앱의 컨트롤러에만 적용된다.
+		$context->registerMiddleware(WopiAuthMiddleware::class);
 	}
 
 	public function boot(IBootContext $context): void {

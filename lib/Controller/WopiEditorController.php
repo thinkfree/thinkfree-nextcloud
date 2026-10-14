@@ -12,6 +12,7 @@ use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\JSONResponse;
+use OCP\AppFramework\Http\TemplateResponse;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
 use OCP\IL10N;
@@ -77,14 +78,62 @@ class WopiEditorController extends Controller {
 	}
 
 	/**
+	 * 파일을 편집 모드로 여는 호스트 페이지. CheckFileInfo 의 HostEditUrl 이 가리킨다.
+	 *
+	 * 웹오피스는 토큰이 곧 만료되면 사용자를 이 주소로 보낸다. 로그인 세션이 있어야
+	 * 열리므로(PublicPage 아님), 새 토큰은 지금 로그인한 사용자에게만 발급된다. 세션이
+	 * 끝났으면 Nextcloud 가 로그인 화면을 거쳐 이 주소로 다시 데려온다.
+	 *
+	 * 브라우저가 주소창으로 이동해 오는 GET 이라 CSRF 토큰이 없다.
+	 */
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	public function edit(string $fileId): TemplateResponse {
+		return $this->hostPage($fileId, true);
+	}
+
+	/**
+	 * 파일을 보기 모드로 여는 호스트 페이지. CheckFileInfo 의 HostViewUrl 이 가리킨다.
+	 */
+	#[NoAdminRequired]
+	#[NoCSRFRequired]
+	public function view(string $fileId): TemplateResponse {
+		return $this->hostPage($fileId, false);
+	}
+
+	/**
+	 * 편집기로 폼 POST 하는 페이지를 만든다. 토큰은 주소가 아니라 POST 본문으로 간다.
+	 * js/editor.js 가 폼을 바로 제출하고, 스크립트가 꺼져 있으면 버튼으로 제출한다.
+	 *
+	 * @param bool $preferEdit true 면 쓰기 권한이 있을 때 edit 액션, false 면 항상 view 액션
+	 */
+	private function hostPage(string $fileId, bool $preferEdit): TemplateResponse {
+		$editorUrl = $this->buildEditorUrl($fileId, $preferEdit);
+
+		if (isset($editorUrl['error'])) {
+			$response = new TemplateResponse($this->appName, 'editor', ['error' => $editorUrl['error']], TemplateResponse::RENDER_AS_GUEST);
+			$response->setStatus($editorUrl['status']);
+
+			return $response;
+		}
+
+		return new TemplateResponse($this->appName, 'editor', [
+			'url' => $editorUrl['url'],
+			'token' => $editorUrl['token'],
+			'ttl' => $editorUrl['ttl'],
+		], TemplateResponse::RENDER_AS_GUEST);
+	}
+
+	/**
 	 * 캐싱된 dicovery 정보를 가져와서 WOPI client에 처음 요청할 URL을 만들어서 반환한다.
      * <p>
      *     <img src="../../docs/url_generate.png">
      * </p>
 
+	 * @param bool $preferEdit true 면 쓰기 권한이 있을 때 edit 액션, false 면 항상 view 액션
 	 * @return array{url: string, token: string, ttl: string, title: string}|array{error: string, status: int}
 	 */
-	private function buildEditorUrl(string $fileId): array {
+	private function buildEditorUrl(string $fileId, bool $preferEdit = true): array {
 		$user = $this->userSession->getUser();
 		if ($user === null) {
 			return [
@@ -118,7 +167,9 @@ class WopiEditorController extends Controller {
 		$canWrite = $file->isUpdateable();
 		$extension = strtolower(pathinfo($file->getName(), PATHINFO_EXTENSION));
 
-		$urlSrc = $this->resolveUrlSrc($extension, $canWrite); // 요청 url 가져오기
+		// 요청 url 가져오기. 보기 모드로 열 때도 토큰의 쓰기 권한은 파일 권한 그대로다.
+		// 웹오피스가 보기에서 편집으로 바꿀 때 같은 토큰을 다시 쓸 수 있다 (WOPI 명세).
+		$urlSrc = $this->resolveUrlSrc($extension, $canWrite && $preferEdit);
 		if ($urlSrc === null) {
 			$this->logger->warning(
 				'No WOPI action advertised for ".' . $extension . '" by ' . $this->discoveryService->getWopiUrl(),

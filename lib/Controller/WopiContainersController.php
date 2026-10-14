@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace OCA\Thinkfree\Controller;
 
+use OCA\Thinkfree\Middleware\Wopi\WopiAuthRequired;
+use OCA\Thinkfree\Middleware\Wopi\WopiContext;
+use OCA\Thinkfree\Middleware\Wopi\WopiController;
+use OCA\Thinkfree\Middleware\Wopi\WopiResource;
 use OCA\Thinkfree\Service\ContainerService;
 use OCA\Thinkfree\Service\FileService;
 use OCA\Thinkfree\Util\NewFileResponder;
@@ -17,14 +21,19 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Container 오퍼레이션을 구현한 컨트롤러
+ *
+ * 요청 검증과 폴더 조회는 WopiAuthMiddleware 가 액션 전에 마치고 WopiContext 에 넣어 둔다.
+ *
  * @see https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/containers/checkcontainerinfo
  */
+#[WopiController]
 class WopiContainersController extends Controller
 {
     private FileService $fileService;
     private LoggerInterface $logger;
     private ContainerService $containerService;
     private NewFileResponder $responder;
+    private WopiContext $context;
 
     public function __construct(
         string           $appName,
@@ -32,7 +41,8 @@ class WopiContainersController extends Controller
         FileService      $fileService,
         LoggerInterface  $logger,
         ContainerService $containerService,
-        NewFileResponder $responder
+        NewFileResponder $responder,
+        WopiContext      $context
     )
     {
         parent::__construct($appName, $request);
@@ -40,19 +50,15 @@ class WopiContainersController extends Controller
         $this->logger = $logger;
         $this->containerService = $containerService;
         $this->responder = $responder;
+        $this->context = $context;
     }
 
     #[PublicPage]
     #[NoCSRFRequired]
+    #[WopiAuthRequired(WopiResource::Container)]
     public function checkContainerInfo(string $containerId): JSONResponse
     {
-        $session = $this->containerService->resolveContainer($this->request, $containerId);
-
-        if ($session === null) {
-            return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
-        }
-
-        [$folder,] = $session;
+        $folder = $this->context->getFolder();
 
         return new JSONResponse([
             'Name' => $folder->getName(),
@@ -90,20 +96,18 @@ class WopiContainersController extends Controller
      */
     #[PublicPage]
     #[NoCSRFRequired]
+    #[WopiAuthRequired(WopiResource::Container)]
     public function enumerateChildren(string $containerId): JSONResponse
     {
-        $session = $this->containerService->resolveContainer($this->request, $containerId);
-
-        if ($session === null) {
-            return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
-        }
-
-        [$folder, $userId, $expires] = $session;
-
         $filterHeader = $this->request->getHeader('X-WOPI-FileExtensionFilterList');
 
         // 자식마다 붙는 토큰은 이 폴더 토큰과 같은 시각에 만료된다
-        [$containers, $files] = $this->containerService->getChildren($folder, $userId, $expires, $filterHeader);
+        [$containers, $files] = $this->containerService->getChildren(
+            $this->context->getFolder(),
+            $this->context->getUserId(),
+            $this->context->getExpires(),
+            $filterHeader
+        );
 
         return new JSONResponse([
             'ChildContainers' => $containers,
@@ -125,17 +129,15 @@ class WopiContainersController extends Controller
      */
     #[PublicPage]
     #[NoCSRFRequired]
+    #[WopiAuthRequired(WopiResource::Container)]
     public function enumerateAncestors(string $containerId): JSONResponse
     {
-        $session = $this->containerService->resolveContainer($this->request, $containerId);
-        if ($session === null) {
-            return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
-        }
-
-        [$folder, $userId, $expires] = $session;
-
         return new JSONResponse([
-            'AncestorsWithRootFirst' => $this->containerService->getAncestors($folder, $userId, $expires),
+            'AncestorsWithRootFirst' => $this->containerService->getAncestors(
+                $this->context->getFolder(),
+                $this->context->getUserId(),
+                $this->context->getExpires()
+            ),
         ]);
     }
 
@@ -150,20 +152,18 @@ class WopiContainersController extends Controller
      */
     #[PublicPage]
     #[NoCSRFRequired]
+    #[WopiAuthRequired(WopiResource::Container)]
     public function postContainer(string $containerId): JSONResponse
     {
-        $session = $this->containerService->resolveContainer($this->request, $containerId);
-
-        if ($session === null) {
-            return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
-        }
-
-        [$folder, $userId, $expires] = $session;
         $override = strtoupper((string)$this->request->getHeader('X-WOPI-Override'));
 
         switch ($override) {
             case 'CREATE_CHILD_FILE':
-                return $this->responder->toResponse($this->fileService->createChildFile($this->request, $folder), $userId, $expires);
+                return $this->responder->toResponse(
+                    $this->fileService->createChildFile($this->request, $this->context->getFolder()),
+                    $this->context->getUserId(),
+                    $this->context->getExpires()
+                );
             default:
                 $this->logger->info('Unsupported WOPI container override "' . $override . '"', [
                     'app' => $this->appName,
