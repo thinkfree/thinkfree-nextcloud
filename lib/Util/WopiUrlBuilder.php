@@ -82,6 +82,30 @@ class WopiUrlBuilder {
 	}
 
 	/**
+	 * 파일을 편집 모드로 여는 호스트 페이지 주소. CheckFileInfo 의 HostEditUrl 이다.
+	 *
+	 * 웹오피스는 토큰이 곧 만료되면 사용자를 이 주소로 보낸다. 로그인한 사용자가 열면
+	 * 새 토큰을 발급해 편집기를 다시 띄우므로, 주소에 토큰을 붙이지 않는다.
+	 */
+	public function hostEditUrl(string $fileId): string {
+		return $this->urlGenerator->linkToRouteAbsolute(
+			Application::APP_ID . '.wopiEditor.edit',
+			['fileId' => $fileId]
+		);
+	}
+
+	/**
+	 * 파일을 보기 모드로 여는 호스트 페이지 주소. CheckFileInfo 의 HostViewUrl 이다.
+	 * 토큰을 붙이지 않는 이유는 hostEditUrl() 과 같다.
+	 */
+	public function hostViewUrl(string $fileId): string {
+		return $this->urlGenerator->linkToRouteAbsolute(
+			Application::APP_ID . '.wopiEditor.view',
+			['fileId' => $fileId]
+		);
+	}
+
+	/**
 	 * @param string $route appinfo/routes.php 의 이름 (앱 ID 제외)
 	 * @param array<string, string> $params 라우트 파라미터
 	 * @param string $resourceId 토큰을 묶을 자원. 파일 ID, 폴더 ID 또는 고정값

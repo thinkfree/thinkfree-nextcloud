@@ -4,7 +4,7 @@
 	<name>Thinkfree Office</name>
 	<summary>Thinkfree Office App</summary>
 	<description>This Nextcloud connector integrates Thinkfree Office, a powerful web-based collaborative editor for seamless document viewing, creation, and real-time editing. Designed for teams and businesses of all sizes, it supports word processing, spreadsheets, and presentations with industry-leading compatibility with MS formats. Thinkfree Office is built for effortless deployment across various environments and integrates smoothly with a wide range of platforms and devices. For enhanced security and compliance, it also offers on-premises deployment, keeping all data under the your control.</description>
-	<version>3.0.0</version>
+	<version>3.0.1</version>
 	<namespace>Thinkfree</namespace>
 	<licence>AGPL-3.0-or-later</licence>
 	<author mail="contact@thinkfree.com" homepage="https://thinkfree.com/">Thinkfree Inc.</author>
@@ -12,7 +12,7 @@
 	<category>files</category>
 	<category>tools</category>
 	<screenshot small-thumbnail="https://raw.githubusercontent.com/lcm-thinkfree-com/thinkfree-nextcloud/main/screenshots/word.png">https://raw.githubusercontent.com/lcm-thinkfree-com/thinkfree-nextcloud/main/screenshots/presentation.png</screenshot>
-    <screenshot>https://raw.githubusercontent.com/lcm-thinkfree-com/thinkfree-nextcloud/main/screenshots/settings.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/thinkfree/thinkfree-nextcloud/main/screenshots/settings-v3.0.1.png</screenshot>
     <screenshot>https://raw.githubusercontent.com/lcm-thinkfree-com/thinkfree-nextcloud/main/screenshots/new.png</screenshot>
     <screenshot>https://raw.githubusercontent.com/lcm-thinkfree-com/thinkfree-nextcloud/main/screenshots/open.png</screenshot>
 	<bugs>https://github.com/thinkfree/thinkfree-nextcloud/issues</bugs>

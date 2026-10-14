@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace OCA\Thinkfree\Service;
 
 use OCA\Thinkfree\AppInfo\Application;
+use OCA\Thinkfree\Exception\ResourceNotFoundException;
 use OCA\Thinkfree\Util\WopiUrlBuilder;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\Node;
-use OCP\IRequest;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -21,72 +21,33 @@ class ContainerService {
 	private IRootFolder $rootFolder;
 	private LoggerInterface $logger;
     private WopiUrlBuilder $urlBuilder;
-    private RequestAuthenticator $authenticator;
 
 	public function __construct(
 		IRootFolder $rootFolder,
 		LoggerInterface $logger,
-        WopiUrlBuilder $urlBuilder,
-        RequestAuthenticator $authenticator
+        WopiUrlBuilder $urlBuilder
 	) {
 		$this->rootFolder = $rootFolder;
 		$this->logger = $logger;
         $this->urlBuilder = $urlBuilder;
-        $this->authenticator = $authenticator;
 	}
 
     /**
+     * 사용자의 폴더 중에서 $containerId 를 찾아서 Folder를 리턴한다
      *
-     * 두 번째 값은 요청 토큰의 만료 시각이다. 응답에 새 토큰을 실을 때 WopiUrlBuilder 에 넘긴다.
-     *
-     * @return array{0: string, 1: int}|null [userId, expires]
+     * @throws ResourceNotFoundException 폴더가 없거나, ID 가 가리키는 것이 파일일 때
      */
-    public function resolveForEcosystem(IRequest $request): ?array {
-        $claims = $this->authenticator->authenticate($request, WopiTokenService::ECOSYSTEM_ID, 'ecosystem');
-
-        if ($claims === null) {
-            return null;
-        }
-
-        return [$claims['userId'], $claims['expires']];
-    }
-
-    /**
-     *
-     * 세 번째 값은 요청 토큰의 만료 시각이다. 응답에 새 토큰을 실을 때 WopiUrlBuilder 에 넘긴다.
-     *
-     * @return array{0: Folder, 1: string, 2: int}|null [Folder, userId, expires]
-     */
-    public function resolveContainer(IRequest $request, string $containerId): ?array
+    public function findContainer(string $userId, string $containerId): Folder
     {
-        $claims = $this->authenticator->authenticate($request, $containerId, 'container ' . $containerId);
+        $folder = $this->rootFolder->getUserFolder($userId)->getById((int)$containerId)[0] ?? null;
 
-        if ($claims === null) {
-            return null;
+        if (!$folder instanceof Folder) {
+            $this->logger->warning('WOPI request for unknown container ' . $containerId, ['app' => Application::APP_ID]);
+
+            throw new ResourceNotFoundException();
         }
 
-        $userId = $claims['userId'];
-
-        try {
-            $nodes = $this->rootFolder->getUserFolder($userId)->getById((int)$containerId);
-        } catch (\Throwable $e) {
-            $this->logger->error('WOPI lookup failed for container ' . $containerId, [
-                'app' => Application::APP_ID,
-                'exception' => $e,
-            ]);
-
-            return null;
-        }
-
-        $node = $nodes[0] ?? null;
-
-        if (!$node instanceof Folder) {
-            $this->logger->error('this is not Folder :' . $containerId, ['app' => Application::APP_ID]);
-
-            return null;
-        }
-
-        return [$node, $claims['userId'], $claims['expires']];
+        return $folder;
     }
 
     /**
