@@ -1,0 +1,1 @@
+(()=>{const e=document.getElementById("thinkfree-editor-form");e&&e.submit()})();
