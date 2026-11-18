@@ -1,6 +1,7 @@
 <?php
 namespace OCA\Thinkfree\Controller;
 
+use OCA\Thinkfree\Service\TemplateService;
 use OCP\IRequest;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\AppFramework\Controller;
@@ -8,13 +9,23 @@ use OCP\Files\IRootFolder;
 use OCP\IUserSession;
 use OCP\IL10N;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
-use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 
 class DocumentController extends Controller {
+    // Nextcloud 언어 코드와 내장 템플릿 폴더(assets/doc_templates) 이름이 다른 언어
+    private const TEMPLATE_FOLDER_ALIASES = [
+        'zh_CN' => 'zh_cn',
+        'zh_TW' => 'zh_tw',
+        'zh_HK' => 'zh_tw',
+        // 스페인어는 es_us 템플릿 하나를 스페인과 중남미 모두에 쓴다
+        'es' => 'es_us',
+        'es_MX' => 'es_us',
+        'es_EC' => 'es_us',
+    ];
+
     private $userFolder;
     private $userId;
     private $l10n;
-
+    private TemplateService $templates;
 
     public function __construct(
         string $appName,
@@ -22,14 +33,16 @@ class DocumentController extends Controller {
         IRootFolder $rootFolder,
         IUserSession $userSession,
         IL10N $l10n,
+        TemplateService $templates,
     ) {
         parent::__construct($appName, $request);
         $this->userId = $userSession->getUser()->getUID();
         $this->userFolder = $rootFolder->getUserFolder($this->userId);
         $this->l10n = $l10n;
+        $this->templates = $templates;
     }
 
-	#[NoCSRFRequired]
+	// 사용자 계정에 파일을 만드는 요청이라 CSRF 토큰을 확인한다. 화면(newFileMenu.js)이 requesttoken 헤더를 보낸다
 	#[NoAdminRequired]
     public function create(): JSONResponse {
 
@@ -62,7 +75,8 @@ class DocumentController extends Controller {
 
             $filename = $this->generateUniqueFilename($fileInfo['baseName'], $fileInfo['extension'], $targetFolder);
             $file = $targetFolder->newFile($filename);
-            $content = $this->loadTemplateContent($fileInfo['templatePath']);
+            // 관리자가 올려 둔 템플릿이 있으면 그것으로, 없으면 앱에 들어 있는 빈 파일로 만든다
+            $content = $this->templates->getContent($type) ?? $this->loadTemplateContent($fileInfo['templatePath']);
             $file->putContent($content);
 
 			$userFolderPath = $this->userFolder->getPath();
@@ -108,10 +122,38 @@ class DocumentController extends Controller {
 
         $info = $fileTypes[$type] ?? null;
         if ($info) {
-            $info['templatePath'] = __DIR__ . "/../../assets/doc_templates/{$locale}/{$info['template']}";
+            $info['templatePath'] = $this->findTemplatePath($locale, $info['template']);
         }
 
         return $info;
+    }
+
+    /**
+     * 사용자 언어에 맞는 내장 템플릿 경로를 찾는다.
+     *
+     * 언어 코드 그대로 → 대응표 → 언어 부분만(es_MX → es) → 그 대응표 순서로 폴더를 찾는다.
+     * 모두 없으면 언어 코드 그대로의 경로를 돌려주고, loadTemplateContent 가 en 으로 대신한다.
+     *
+     * getLanguageCode() 는 이 앱에 번역 파일(l10n/{코드}.json)이 있는 언어만 돌려준다.
+     * 그래서 템플릿을 추가한 언어는 번역 파일도 함께 있어야 그 템플릿이 쓰인다.
+     */
+    private function findTemplatePath(string $locale, string $fileName): string {
+        $language = explode('_', $locale)[0];
+        $candidates = array_unique(array_filter([
+            $locale,
+            self::TEMPLATE_FOLDER_ALIASES[$locale] ?? null,
+            $language,
+            self::TEMPLATE_FOLDER_ALIASES[$language] ?? null,
+        ]));
+
+        foreach ($candidates as $folder) {
+            $path = __DIR__ . "/../../assets/doc_templates/{$folder}/{$fileName}";
+            if (file_exists($path)) {
+                return $path;
+            }
+        }
+
+        return __DIR__ . "/../../assets/doc_templates/{$locale}/{$fileName}";
     }
 
     private function loadTemplateContent(string $templatePath): string {

@@ -18,6 +18,9 @@ use OCA\Files\Event\LoadAdditionalScriptsEvent;
 use OCP\Security\CSP\AddContentSecurityPolicyEvent;
 use OCA\Thinkfree\Listener\CspListener;
 use OCA\Thinkfree\Middleware\WopiAuthMiddleware;
+use OCA\Thinkfree\Listener\RenderReferenceListener;
+use OCA\Thinkfree\Reference\DocumentReferenceProvider;
+use OCP\Collaboration\Reference\RenderReferenceEvent;
 
 class Application extends App implements IBootstrap {
 	public const APP_ID = 'thinkfree';
@@ -41,6 +44,10 @@ class Application extends App implements IBootstrap {
 
 		// #[WopiAuthRequired] 액션은 실행 전에 이 미들웨어가 요청을 검증한다. 이 앱의 컨트롤러에만 적용된다.
 		$context->registerMiddleware(WopiAuthMiddleware::class);
+
+		// 호스트 페이지 링크를 Assistant 채팅·Talk·Text 안에서 Thinkfree Office 로 띄운다
+		$context->registerReferenceProvider(DocumentReferenceProvider::class);
+		$context->registerEventListener(RenderReferenceEvent::class, RenderReferenceListener::class);
 	}
 
 	public function boot(IBootContext $context): void {

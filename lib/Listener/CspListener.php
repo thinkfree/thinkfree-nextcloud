@@ -23,6 +23,9 @@ use Psr\Log\LoggerInterface;
  *
  * 따라서 CSP에 걸리지 않도록 설정된 서버 주소와 캐시된 주소를 모두 추가한다.
  *
+ * 링크 미리보기 위젯(reference.js)은 웹오피스를 iframe 으로 띄우는데, 기본 정책의
+ * frame-src 는 'self' 뿐이라 같은 주소를 frame-src 에도 추가한다.
+ *
  * 두 값 모두 origin 만 남기고, 형식이 맞지 않으면 추가하지 않는다.
  *
  * @template-implements IEventListener<AddContentSecurityPolicyEvent>
@@ -78,6 +81,7 @@ class CspListener implements IEventListener {
 
 		foreach (array_keys($origins) as $origin) {
 			$policy->addAllowedFormActionDomain($origin);
+			$policy->addAllowedFrameDomain($origin);
 		}
 
 		$event->addPolicy($policy);

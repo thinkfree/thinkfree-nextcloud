@@ -1,0 +1,12 @@
+OC.L10N.register(
+    "thinkfree",
+    {
+        "Open in Thinkfree Office": "在 Thinkfree Office 中打开",
+        "New Excel Document": "新建 Excel 文档",
+        "New Word Document": "新建 Word 文档",
+        "New Presentation Document": "新建演示文稿",
+        "Failed to open the requested file.": "无法打开所请求的文件。",
+        "Opening Thinkfree Office…": "正在打开 Thinkfree Office…"
+    },
+    "nplurals=1; plural=0;"
+);
