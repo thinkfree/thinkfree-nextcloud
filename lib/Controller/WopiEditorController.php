@@ -60,11 +60,14 @@ class WopiEditorController extends Controller {
 	/**
      * wopi.js의 run 콜백이 호출하고 appinfo/routes.php에 의해 라우팅된다.
      * 브라우저가 새 탭에서 웹오피스로 POST할 주소와 액세스 토큰을 전달한다.
+	 * 링크 미리보기 위젯(js/reference.js)은 mode=view 로 불러 보기 모드 주소를 받는다.
+	 *
+	 * @param string $mode view 면 쓰기 권한이 있어도 view 액션, 그 밖에는 쓸 수 있을 때 edit 액션
 	 */
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
-	public function launch(string $fileId): JSONResponse {
-		$editorUrl = $this->buildEditorUrl($fileId); // client에게 요청할 URL을 생성
+	public function launch(string $fileId, string $mode = 'edit'): JSONResponse {
+		$editorUrl = $this->buildEditorUrl($fileId, $mode !== 'view'); // client에게 요청할 URL을 생성
 
 		if (isset($editorUrl['error'])) {
 			return new JSONResponse(['error' => $editorUrl['error']], $editorUrl['status']);

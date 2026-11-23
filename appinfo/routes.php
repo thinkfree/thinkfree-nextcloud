@@ -6,6 +6,11 @@ return [
         ['name' => 'settings#set', 'url' => '/settings/set', 'verb' => 'POST'],
         ['name' => 'document#create', 'url' => '/new_document', 'verb' => 'GET'],
 
+		// 관리자가 올리는 새 문서 템플릿. 올려 두면 모든 사용자의 새 문서가 그 파일로 만들어진다.
+		['name' => 'template#index', 'url' => '/settings/templates', 'verb' => 'GET'],
+		['name' => 'template#upload', 'url' => '/settings/templates/{type}', 'verb' => 'POST'],
+		['name' => 'template#remove', 'url' => '/settings/templates/{type}', 'verb' => 'DELETE'],
+
 		// 호스트 페이지. 로그인한 사용자가 열면 새 토큰으로 편집기를 띄운다.
 		// CheckFileInfo 의 HostEditUrl·HostViewUrl 로 웹오피스에 알려 주어, 토큰이 만료될 때 다시 연다.
 		['name' => 'wopiEditor#edit', 'url' => '/edit/{fileId}', 'verb' => 'GET'],
