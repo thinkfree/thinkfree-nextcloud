@@ -1,0 +1,42 @@
+/* 링크 미리보기 위젯 (js/reference.js) */
+.thinkfree-reference {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	border: 1px solid var(--color-border);
+	border-radius: var(--border-radius-large);
+	overflow: hidden;
+	background: var(--color-main-background);
+}
+
+.thinkfree-reference-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--color-border);
+}
+
+.thinkfree-reference-name {
+	font-weight: bold;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.thinkfree-reference-header a {
+	flex-shrink: 0;
+	color: var(--color-primary-element);
+}
+
+.thinkfree-reference-status {
+	padding: 8px 12px;
+	color: var(--color-text-maxcontrast);
+}
+
+.thinkfree-reference-frame {
+	width: 100%;
+	height: 480px;
+	border: 0;
+}

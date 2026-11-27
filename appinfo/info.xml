@@ -4,7 +4,7 @@
 	<name>Thinkfree Office</name>
 	<summary>Thinkfree Office App</summary>
 	<description>This Nextcloud connector integrates Thinkfree Office, a powerful web-based collaborative editor for seamless document viewing, creation, and real-time editing. Designed for teams and businesses of all sizes, it supports word processing, spreadsheets, and presentations with industry-leading compatibility with MS formats. Thinkfree Office is built for effortless deployment across various environments and integrates smoothly with a wide range of platforms and devices. For enhanced security and compliance, it also offers on-premises deployment, keeping all data under the your control.</description>
-	<version>3.1.0</version>
+	<version>3.1.1</version>
 	<namespace>Thinkfree</namespace>
 	<licence>AGPL-3.0-or-later</licence>
 	<author mail="contact@thinkfree.com" homepage="https://thinkfree.com/">Thinkfree Inc.</author>
